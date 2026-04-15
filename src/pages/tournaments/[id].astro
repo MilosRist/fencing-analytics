@@ -2,6 +2,17 @@
 // src/pages/tournaments/[id].astro
 import Layout from '../../layouts/Layout.astro';
 import { getTournamentDetail } from '../../lib/queries';
+import prisma from '../../lib/prisma';
+
+export async function getStaticPaths() {
+  const tournaments = await prisma.tournament.findMany({
+    select: { id: true },
+  });
+
+  return tournaments.map((tournament) => ({
+    params: { id: tournament.id },
+  }));
+}
 
 const { id } = Astro.params;
 let tournament: any = null;

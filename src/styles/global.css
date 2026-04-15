@@ -1,0 +1,159 @@
+/* src/styles/global.css */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .font-mono {
+    font-family: var(--font-mono);
+  }
+}
+
+@layer base {
+  :root {
+    --font-sans: 'Inter', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+
+    --background: 210 60% 97%;
+    --foreground: 220 40% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 40% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 40% 10%;
+    --primary: 214 80% 46%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 50% 94%;
+    --secondary-foreground: 214 50% 30%;
+    --muted: 210 40% 92%;
+    --muted-foreground: 214 30% 50%;
+    --accent: 210 50% 92%;
+    --accent-foreground: 214 60% 25%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 210 40% 88%;
+    --input: 210 40% 88%;
+    --ring: 214 80% 46%;
+    --radius: 0.625rem;
+
+    --chart-1: 214 80% 46%;
+    --chart-2: 199 70% 45%;
+    --chart-3: 230 55% 55%;
+    --chart-4: 180 50% 40%;
+    --chart-5: 250 50% 60%;
+
+    --sidebar-background: 220 48% 11%;
+    --sidebar-foreground: 210 40% 75%;
+    --sidebar-primary: 214 80% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 40% 16%;
+    --sidebar-accent-foreground: 210 60% 88%;
+    --sidebar-border: 220 35% 18%;
+    --sidebar-ring: 214 80% 60%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+  }
+
+  ::-webkit-scrollbar {
+    @apply w-1.5 h-1.5;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-primary/20 rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-primary/35;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-card text-card-foreground border border-border rounded-xl;
+  }
+
+  .card-glow {
+    @apply card shadow-md shadow-primary/10;
+  }
+
+  .card-accent {
+    @apply card border-l-2 border-l-primary/60 pl-5;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90
+           text-primary-foreground font-medium rounded-xl transition-all duration-150
+           focus:outline-none focus:ring-2 focus:ring-ring/50;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center gap-2 px-4 py-2 bg-secondary hover:bg-secondary/80
+           text-secondary-foreground font-medium rounded-xl border border-border
+           transition-all focus:outline-none focus:ring-2 focus:ring-ring/20;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-semibold tracking-wide;
+  }
+  .badge-primary {
+    @apply badge bg-primary/10 text-primary border border-primary/20;
+  }
+  .badge-lv3 {
+    @apply badge bg-amber-50 text-amber-700 border border-amber-200;
+  }
+  .badge-lv2 {
+    @apply badge bg-primary/10 text-primary border border-primary/20;
+  }
+  .badge-lv1 {
+    @apply badge bg-muted text-muted-foreground border border-border;
+  }
+
+  .input {
+    @apply bg-background border border-input rounded-xl px-4 py-2.5 text-sm
+           placeholder:text-muted-foreground focus:outline-none focus:ring-2
+           focus:ring-ring/40 focus:border-ring/50 transition-all w-full;
+  }
+
+  .select {
+    @apply input appearance-none cursor-pointer;
+  }
+
+  .stat-card {
+    @apply card p-5 flex flex-col gap-1.5;
+  }
+
+  .piste-line {
+    @apply h-px w-full bg-gradient-to-r from-primary/50 via-primary/20 to-transparent rounded-full my-1;
+  }
+
+  .table-row-hover {
+    @apply hover:bg-primary/5 transition-colors;
+  }
+
+  .terminal-label {
+    @apply font-mono text-xs text-muted-foreground tracking-wider;
+  }
+
+  .sidebar-nav-item {
+    @apply flex items-center gap-3 px-4 py-2 rounded-none text-sidebar-foreground
+           text-sm font-medium transition-all duration-150 cursor-pointer;
+  }
+  .sidebar-nav-item:hover {
+    @apply bg-sidebar-accent text-sidebar-accent-foreground;
+  }
+  .sidebar-nav-item.active {
+    @apply bg-sidebar-primary/15 text-sidebar-primary border-r-2 border-sidebar-primary;
+  }
+}

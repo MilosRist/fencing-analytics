@@ -1,0 +1,84 @@
+---
+// src/pages/clubs.astro
+import Layout from '../layouts/Layout.astro';
+import { getClubRankings, getFilterOptions } from '../lib/queries';
+import { formatPoints } from '../lib/format';
+
+const url = Astro.url;
+const season = url.searchParams.get('season') ?? '';
+const weapon = url.searchParams.get('weapon') ?? '';
+
+let clubs: any[] = [];
+let filterOpts = { seasons: [] as string[], weapons: [] as string[], categories: [] as string[] };
+
+try {
+  [clubs, filterOpts] = await Promise.all([
+    getClubRankings({ season: season || undefined, weapon: weapon || undefined }),
+    getFilterOptions(),
+  ]);
+} catch {}
+---
+
+<Layout title="Club Rankings">
+  <div class="mb-8">
+    <h1 class="text-3xl font-bold tracking-tight text-foreground mb-1">Club Rankings</h1>
+    <p class="text-muted-foreground">Aggregate points earned by members across tournaments</p>
+  </div>
+
+  <form method="get" class="card p-4 mb-6 flex flex-wrap gap-3 items-end">
+    <div class="flex-1 min-w-[140px]">
+      <label class="block text-xs text-muted-foreground mb-1.5 uppercase tracking-wide font-medium">Season</label>
+      <select name="season" class="select">
+        <option value="">All Seasons</option>
+        {filterOpts.seasons.map(s => <option value={s} selected={s === season}>{s}</option>)}
+      </select>
+    </div>
+    <div class="flex-1 min-w-[130px]">
+      <label class="block text-xs text-muted-foreground mb-1.5 uppercase tracking-wide font-medium">Weapon</label>
+      <select name="weapon" class="select">
+        <option value="">All Weapons</option>
+        {filterOpts.weapons.map(w => <option value={w} selected={w === weapon}>{w}</option>)}
+      </select>
+    </div>
+    <button type="submit" class="btn-primary shrink-0">Apply</button>
+    <a href="/clubs" class="btn-secondary shrink-0">Reset</a>
+  </form>
+
+  <div class="grid gap-4">
+    {clubs.length === 0 ? (
+      <div class="card p-12 text-center text-muted-foreground border border-dashed border-border">
+        No club data available yet.
+      </div>
+    ) : clubs.map(club => {
+      const pct = clubs[0]?.totalPoints > 0 ? (club.totalPoints / clubs[0].totalPoints) * 100 : 0;
+      return (
+        <div class="card p-5 hover:shadow-md transition-shadow">
+          <div class="flex items-center gap-4">
+            {/* Fix 1: Replaced template literal class with string concatenation */}
+            <div class={"text-2xl font-bold tabular-nums w-10 shrink-0 " + (
+              club.rank === 1 ? 'text-yellow-500 dark:text-yellow-400' :
+              club.rank === 2 ? 'text-slate-400' :
+              club.rank === 3 ? 'text-orange-500 dark:text-orange-400' :
+              'text-muted-foreground'
+            )}>
+              {/* Fix 2: Replaced template literal string with concatenation */}
+              {club.rank <= 3 ? ['🥇','🥈','🥉'][club.rank-1] : '#' + club.rank}
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="font-semibold text-base text-foreground truncate">{club.club}</div>
+              <div class="text-xs text-muted-foreground mt-0.5">{club.memberCount} competing members</div>
+              <div class="mt-2.5 h-1.5 rounded-full bg-secondary overflow-hidden">
+                {/* Fix 3: Replaced template literal in style attribute with concatenation */}
+                <div class="h-full rounded-full bg-primary transition-all" style={"width: " + pct + "%"} />
+              </div>
+            </div>
+            <div class="text-right shrink-0">
+              <div class="font-mono font-bold text-xl text-foreground tabular-nums">{formatPoints(club.totalPoints)}</div>
+              <div class="text-xs text-muted-foreground mt-0.5">points</div>
+            </div>
+          </div>
+        </div>
+      );
+    })}
+  </div>
+</Layout>

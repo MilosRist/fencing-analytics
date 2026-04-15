@@ -1,0 +1,232 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Member {
+  id             String   @id @default(cuid())
+  cffLicence     String?  @unique
+  membershipId   String?  @unique
+  firstName      String
+  lastName       String
+  fullName       String
+  sex            String?  // M, F, Mixed
+  dateOfBirth    DateTime?
+  memberAge      Int?
+  status         String?
+  country        String?
+  province       String?
+  city           String?
+  club           String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  poolEntries     PoolEntry[]
+  matchesAsLeft   Match[]    @relation("MatchLeft")
+  matchesAsRight  Match[]    @relation("MatchRight")
+  boutResults     BoutResult[]
+  eloRatings      EloRating[]
+  tournamentResults TournamentResult[]
+  pointEntries    PointEntry[]
+
+  @@index([fullName])
+  @@index([club])
+}
+
+model Tournament {
+  id           String   @id @default(cuid())
+  sourceKey    String   @unique // e.g. "2025_AFA_Provincial_Championships"
+  name         String
+  shortName    String?
+  level        Int      @default(0) // 0=regional, 1=sanctioned, 2=AB Cup, 3=Provincials, 4=Canada Cup
+  season       String?  // e.g. "24/25"
+  date         DateTime?
+  location     String?
+  createdAt    DateTime @default(now())
+
+  events            Event[]
+  tournamentResults TournamentResult[]
+  pointEntries      PointEntry[]
+
+  @@index([season])
+  @@index([level])
+}
+
+model Event {
+  id           String   @id @default(cuid())
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  name         String   // e.g. "Senior Men's Epee"
+  weapon       String   // Epee, Foil, Saber
+  category     String   // Senior, Junior, Cadet, Veteran, etc.
+  sex          String   // Men, Women, Mixed, Wheelchair
+  eventUrl     String?
+  scheduledAt  DateTime?
+  createdAt    DateTime @default(now())
+
+  pools             Pool[]
+  tournamentResults TournamentResult[]
+  matches           Match[]
+
+
+  @@index([tournamentId])
+  @@index([weapon])
+  @@index([sex])
+}
+
+model Pool {
+  id           String   @id @default(cuid())
+  eventId      String
+  event        Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  sourcePoolId String?  // original pool UUID from data
+  poolNumber   Int?
+  createdAt    DateTime @default(now())
+
+  entries PoolEntry[]
+  matches Match[]
+
+  @@index([eventId])
+}
+
+model PoolEntry {
+  id               String  @id @default(cuid())
+  poolId           String
+  pool             Pool    @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  memberId         String
+  member           Member  @relation(fields: [memberId], references: [id])
+  poolPosition     Int
+  victories        Int     @default(0)
+  bouts            Int     @default(0)
+  touchesScored    Int     @default(0)
+  touchesReceived  Int     @default(0)
+  indicator        Int     @default(0) // TS - TR
+  winRate          Float   @default(0)
+
+  @@unique([poolId, memberId])
+  @@index([memberId])
+}
+
+model Match {
+  id            String   @id @default(cuid())
+  poolId        String?
+  pool          Pool?    @relation(fields: [poolId], references: [id])
+  // Null poolId = elimination round match
+  eventId       String?                                       
+  event         Event?   @relation(fields: [eventId], references: [id])
+  round         String?  // "pool", "T64", "T32", "T16", "QF", "SF", "F"
+  leftMemberId  String
+  leftMember    Member   @relation("MatchLeft",  fields: [leftMemberId],  references: [id])
+  rightMemberId String
+  rightMember   Member   @relation("MatchRight", fields: [rightMemberId], references: [id])
+  leftScore     Int?
+  rightScore    Int?
+  winnerId      String?
+  createdAt     DateTime @default(now())
+
+  bouts         BoutResult[]
+
+  @@index([poolId])
+  @@index([leftMemberId])
+  @@index([rightMemberId])
+  @@index([winnerId])
+}
+
+model BoutResult {
+  id            String  @id @default(cuid())
+  matchId       String
+  match         Match   @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  memberId      String
+  member        Member  @relation(fields: [memberId], references: [id])
+  touchesScored Int
+  result        String  // "V" for victory, "D" for defeat
+  poolPosition  Int?
+
+  @@index([matchId])
+  @@index([memberId])
+}
+
+model TournamentResult {
+  id           String     @id @default(cuid())
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  eventId      String
+  event        Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  memberId     String
+  member       Member     @relation(fields: [memberId], references: [id])
+  place        Int
+  club         String?
+  region       String?
+  createdAt    DateTime   @default(now())
+
+  @@unique([eventId, memberId])
+  @@index([memberId])
+  @@index([tournamentId])
+  @@index([place])
+}
+
+model PointEntry {
+  id           String     @id @default(cuid())
+  memberId     String
+  member       Member     @relation(fields: [memberId], references: [id])
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id])
+  eventName    String
+  place        Int?
+  points       Float      @default(0)
+  season       String?
+  weapon       String?
+  sex          String?
+  category     String?
+  createdAt    DateTime   @default(now())
+
+  @@index([memberId])
+  @@index([tournamentId])
+  @@index([season])
+  @@index([weapon])
+  @@unique([memberId, tournamentId, eventName])
+}
+
+model EloRating {
+  id          String   @id @default(cuid())
+  memberId    String
+  member      Member   @relation(fields: [memberId], references: [id])
+  weapon      String   // Epee, Foil, Saber
+  season      String   @default("") // tournament season, e.g. 24/25
+  category    String   @default("") // Senior, Junior, Cadet, etc.
+  rating      Float    @default(1200)
+  gamesPlayed Int      @default(0)
+  wins        Int      @default(0)
+  losses      Int      @default(0)
+  peakRating  Float    @default(1200)
+  lastUpdated DateTime @default(now())
+
+  history EloHistory[]
+
+  @@unique([memberId, weapon, season, category])
+  @@index([weapon])
+  @@index([season])
+  @@index([rating])
+}
+
+model EloHistory {
+  id           String    @id @default(cuid())
+  eloRatingId  String
+  eloRating    EloRating @relation(fields: [eloRatingId], references: [id], onDelete: Cascade)
+  ratingBefore Float
+  ratingAfter  Float
+  change       Float
+  opponentId   String?
+  tournamentId String?
+  round        String?
+  createdAt    DateTime  @default(now())
+
+  @@index([eloRatingId])
+  @@index([createdAt])
+}

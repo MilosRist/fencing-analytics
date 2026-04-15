@@ -1,0 +1,40 @@
+{
+  "name": "fencing-analytics",
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "tsx scripts/seed.ts",
+    "db:import": "tsx scripts/import-data.ts",
+    "elo:recompute": "tsx scripts/recompute-elo.ts",
+    "db:backfill:pool-events": "tsx scripts/backfill-pool-event-links.ts"
+  },
+  "dependencies": {
+    "@astrojs/react": "^3.6.3",
+    "@astrojs/tailwind": "^5.1.4",
+    "@prisma/client": "^6.19.3",
+    "@supabase/supabase-js": "^2.47.10",
+    "astro": "^4.16.18",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "recharts": "^2.13.3",
+    "tailwind-merge": "^2.5.5",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "prisma": "^6.19.3",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

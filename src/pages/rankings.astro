@@ -9,17 +9,35 @@ const season   = url.searchParams.get('season')   ?? '';
 const weapon   = url.searchParams.get('weapon')   ?? '';
 const sex      = url.searchParams.get('sex')      ?? '';
 const category = url.searchParams.get('category') ?? '';
-const page     = parseInt(url.searchParams.get('page') ?? '1');
-const limit    = 50;
+
+// Users must select Season, Weapon, and Category to see results
+const hasRequiredFilters = season && weapon && category;
 
 let rankings: any[] = [];
 let filterOpts = { seasons: [] as string[], weapons: [] as string[], categories: [] as string[] };
 
 try {
-  [rankings, filterOpts] = await Promise.all([
-    getRankings({ season: season || undefined, weapon: weapon || undefined, sex: sex || undefined, category: category || undefined, limit }),
-    getFilterOptions(),
-  ]);
+  const queries: any[] = [getFilterOptions()];
+  
+  // Only fetch rankings if the required filters are actually applied
+  if (hasRequiredFilters) {
+    queries.push(
+      getRankings({ 
+        season, 
+        weapon, 
+        sex: sex || undefined, 
+        category, 
+        limit: 50 
+      })
+    );
+  }
+
+  const results = await Promise.all(queries);
+  filterOpts = results[0];
+  
+  if (hasRequiredFilters) {
+    rankings = results[1];
+  }
 } catch {}
 
 const SEX_OPTIONS = ['Men', 'Women', 'Mixed', 'Wheelchair'];
@@ -28,22 +46,26 @@ const SEX_OPTIONS = ['Men', 'Women', 'Mixed', 'Wheelchair'];
 <Layout title="Rankings">
   <div class="mb-8">
     <h1 class="text-3xl font-bold tracking-tight text-foreground mb-1">Rankings</h1>
-    <p class="text-muted-foreground">Cumulative points across all tournaments</p>
+    <p class="text-muted-foreground">Points by season, weapon, and category</p>
   </div>
 
   <!-- Filters -->
   <form method="get" class="card p-4 mb-6 flex flex-wrap gap-3 items-end">
     <div class="flex-1 min-w-[140px]">
-      <label class="block text-xs text-muted-foreground mb-1.5 uppercase tracking-wide font-medium">Season</label>
-      <select name="season" class="select">
-        <option value="">All Seasons</option>
+      <label class="block text-xs text-muted-foreground mb-1.5 uppercase tracking-wide font-medium">
+        Season <span class="text-red-500">*</span>
+      </label>
+      <select name="season" class="select" required>
+        <option value="" disabled={!season}>Select Season</option>
         {filterOpts.seasons.map(s => <option value={s} selected={s === season}>{s}</option>)}
       </select>
     </div>
     <div class="flex-1 min-w-[130px]">
-      <label class="block text-xs text-muted-foreground mb-1.5 uppercase tracking-wide font-medium">Weapon</label>
-      <select name="weapon" class="select">
-        <option value="">All Weapons</option>
+      <label class="block text-xs text-muted-foreground mb-1.5 uppercase tracking-wide font-medium">
+        Weapon <span class="text-red-500">*</span>
+      </label>
+      <select name="weapon" class="select" required>
+        <option value="" disabled={!weapon}>Select Weapon</option>
         {filterOpts.weapons.map(w => <option value={w} selected={w === weapon}>{w}</option>)}
       </select>
     </div>
@@ -55,9 +77,11 @@ const SEX_OPTIONS = ['Men', 'Women', 'Mixed', 'Wheelchair'];
       </select>
     </div>
     <div class="flex-1 min-w-[140px]">
-      <label class="block text-xs text-muted-foreground mb-1.5 uppercase tracking-wide font-medium">Category</label>
-      <select name="category" class="select">
-        <option value="">All Categories</option>
+      <label class="block text-xs text-muted-foreground mb-1.5 uppercase tracking-wide font-medium">
+        Category <span class="text-red-500">*</span>
+      </label>
+      <select name="category" class="select" required>
+        <option value="" disabled={!category}>Select Category</option>
         {filterOpts.categories.map(c => <option value={c} selected={c === category}>{c}</option>)}
       </select>
     </div>
@@ -79,41 +103,38 @@ const SEX_OPTIONS = ['Men', 'Women', 'Mixed', 'Wheelchair'];
           </tr>
         </thead>
         <tbody class="divide-y divide-border">
-        <!-- Replace the existing empty state td -->
-        {rankings.length === 0 ? (
-          <tr>
-            <td colspan="5" class="px-4 py-12 text-center text-slate-500">
-              {!weapon && !category
-                ? 'Select a weapon or category to view rankings.'
-                : 'No results found for the selected filters.'}
-            </td>
-          </tr>
-        ) : rankings.map(r => (
-            <tr class="table-row-hover">
-              <td class="px-4 py-3">
-                {/* Fix 2: Replaced template literal with string concatenation to fix esbuild parser error */}
-                <span class={"font-bold tabular-nums text-sm " + (
-                  r.rank === 1 ? 'text-yellow-500 dark:text-yellow-400' :
-                  r.rank === 2 ? 'text-slate-400' :
-                  r.rank === 3 ? 'text-orange-500 dark:text-orange-400' :
-                  'text-muted-foreground'
-                )}>
-                  {/* Fix 3: Replaced template literal here as well */}
-                  {r.rank <= 3 ? ['🥇','🥈','🥉'][r.rank-1] : '#' + r.rank}
-                </span>
-              </td>
-              <td class="px-4 py-3">
-                <a href={'/fencer/' + r.member?.id} class="font-semibold hover:text-primary transition-colors text-foreground">
-                  {r.member?.fullName ?? '—'}
-                </a>
-              </td>
-              <td class="px-4 py-3 text-muted-foreground hidden sm:table-cell text-xs">{r.member?.club ?? '—'}</td>
-              <td class="px-4 py-3 text-right text-muted-foreground hidden md:table-cell tabular-nums">{r.tournaments}</td>
-              <td class="px-4 py-3 text-right font-mono font-bold text-foreground tabular-nums">
-                {formatPoints(r.totalPoints ?? 0)}
+          {rankings.length === 0 ? (
+            <tr>
+              <td colspan="5" class="px-4 py-12 text-center text-slate-500">
+                {!hasRequiredFilters
+                  ? 'Please select a Season, Weapon, and Category to view rankings.'
+                  : 'No results found for the selected filters.'}
               </td>
             </tr>
-          ))}
+          ) : rankings.map(r => (
+              <tr class="table-row-hover">
+                <td class="px-4 py-3">
+                  <span class={"font-bold tabular-nums text-sm " + (
+                    r.rank === 1 ? 'text-yellow-500 dark:text-yellow-400' :
+                    r.rank === 2 ? 'text-slate-400' :
+                    r.rank === 3 ? 'text-orange-500 dark:text-orange-400' :
+                    'text-muted-foreground'
+                  )}>
+                    {r.rank <= 3 ? ['🥇','🥈','🥉'][r.rank-1] : '#' + r.rank}
+                  </span>
+                </td>
+                <td class="px-4 py-3">
+                  <a href={'/fencer/' + r.member?.id} class="font-semibold hover:text-primary transition-colors text-foreground">
+                    {r.member?.fullName ?? '—'}
+                  </a>
+                </td>
+                <td class="px-4 py-3 text-muted-foreground hidden sm:table-cell text-xs">{r.member?.club ?? '—'}</td>
+                <td class="px-4 py-3 text-right text-muted-foreground hidden md:table-cell tabular-nums">{r.tournaments}</td>
+                <td class="px-4 py-3 text-right font-mono font-bold text-foreground tabular-nums">
+                  {formatPoints(r.totalPoints ?? 0)}
+                </td>
+              </tr>
+            ))}
         </tbody>
       </table>
     </div>

@@ -12,14 +12,111 @@ const bId = url.searchParams.get('b') ?? '';
 let h2h: any = null;
 let memberA: any = null;
 let memberB: any = null;
+let commonDisciplines: any[] = [];
+let phaseStats: Record<string, { a: number; b: number; d: number }> = {};
+
+// New feature variables
+let avgDiffA = '0.0';
+let avgDiffB = '0.0';
+let streakCount = 0;
+let streakFencerName: string | null = null;
+let commonTournaments: { name: string; id: string }[] = [];
 
 if (aId && bId) {
   try {
     [memberA, memberB] = await Promise.all([
-      prisma.member.findUnique({ where: { id: aId }, select: { id: true, fullName: true, club: true } }),
-      prisma.member.findUnique({ where: { id: bId }, select: { id: true, fullName: true, club: true } }),
+      prisma.member.findUnique({ 
+        where: { id: aId }, 
+        select: { id: true, fullName: true, club: true, eloRatings: true } 
+      }),
+      prisma.member.findUnique({ 
+        where: { id: bId }, 
+        select: { id: true, fullName: true, club: true, eloRatings: true } 
+      }),
     ]);
-    h2h = await getHeadToHead(aId, bId);
+    
+    if (memberA && memberB) {
+      h2h = await getHeadToHead(aId, bId);
+
+      // --- ELO Comparison Logic ---
+      const aMap = new Map((memberA.eloRatings || []).map((r: any) => [`${r.weapon}|${r.category}|${r.season}`, r]));
+      const bMap = new Map((memberB.eloRatings || []).map((r: any) => [`${r.weapon}|${r.category}|${r.season}`, r]));
+
+      for (const [key, aR] of aMap) {
+        const bR = bMap.get(key);
+        if (bR) {
+          commonDisciplines.push({
+            key,
+            label: `${aR.weapon} · ${aR.category || '—'} · ${aR.season || '—'}`,
+            aRating: aR.rating,
+            aPeak: aR.peakRating,
+            aGames: aR.gamesPlayed,
+            bRating: bR.rating,
+            bPeak: bR.peakRating,
+            bGames: bR.gamesPlayed,
+          });
+        }
+      }
+
+      if (h2h) {
+        // --- Phase Breakdown Logic ---
+        for (const m of h2h.matches) {
+          const phase = formatRoundLabel(m.round);
+          if (!phaseStats[phase]) phaseStats[phase] = { a: 0, b: 0, d: 0 };
+          if (m.winnerId === aId) phaseStats[phase].a++;
+          else if (m.winnerId === bId) phaseStats[phase].b++;
+          else phaseStats[phase].d++;
+        }
+
+        // --- Average Point Differential Logic ---
+        let aWinDiffs: number[] = [];
+        let bWinDiffs: number[] = [];
+
+        for (const m of h2h.matches) {
+          const aIsLeft = m.leftMemberId === aId;
+          const aScore = aIsLeft ? m.leftScore : m.rightScore;
+          const bScore = aIsLeft ? m.rightScore : m.leftScore;
+
+          if (aScore != null && bScore != null) {
+            if (m.winnerId === aId) aWinDiffs.push(aScore - bScore);
+            else if (m.winnerId === bId) bWinDiffs.push(bScore - aScore);
+          }
+        }
+
+        if (aWinDiffs.length > 0) {
+          const sum = aWinDiffs.reduce((acc, curr) => acc + curr, 0);
+          avgDiffA = (sum / aWinDiffs.length).toFixed(1);
+        }
+        if (bWinDiffs.length > 0) {
+          const sum = bWinDiffs.reduce((acc, curr) => acc + curr, 0);
+          avgDiffB = (sum / bWinDiffs.length).toFixed(1);
+        }
+
+        // --- Current Streak Logic ---
+        // Matches are ordered desc (most recent first) from the DB query
+        if (h2h.matches.length > 0) {
+          const firstWinner = h2h.matches[0].winnerId;
+          if (firstWinner) {
+            streakFencerName = firstWinner === aId ? memberA.fullName : memberB.fullName;
+            for (const m of h2h.matches) {
+              if (m.winnerId === firstWinner) streakCount++;
+              else break; // Streak broken
+            }
+          }
+        }
+
+        // --- Common Tournaments Quick Links ---
+        const tournamentMap = new Map<string, { name: string; id: string }>();
+        for (const m of h2h.matches) {
+          const ev = m.pool?.event ?? m.event;
+          const t = ev?.tournament;
+          if (t?.id && t?.name && !tournamentMap.has(t.id)) {
+            tournamentMap.set(t.id, { name: t.name, id: t.id });
+          }
+        }
+        commonTournaments = Array.from(tournamentMap.values()).slice(0, 6); // Limit to 6 to prevent UI overflow
+      }
+    }
   } catch {}
 }
 ---
@@ -27,7 +124,7 @@ if (aId && bId) {
 <Layout title="Head to Head">
   <div class="mb-8">
     <h1 class="text-3xl font-extrabold mb-1">Head-to-Head</h1>
-    <p class="text-slate-400">Every recorded bout between two fencers, with tournament context and scores</p>
+    <p class="text-slate-400">Every recorded bout between two fencers, with tournament context, ELO, and scores</p>
   </div>
 
   <!-- Fencer selector -->
@@ -58,29 +155,135 @@ if (aId && bId) {
   </div>
 
   {h2h && memberA && memberB && (
-    <div>
+    <div class="space-y-6">
       <!-- Score banner (decided bouts only) -->
-      <div class="card p-6 mb-6 flex items-center justify-around text-center gap-4">
+      <div class="card p-6 flex items-center justify-around text-center gap-4">
         <div class="flex-1">
           <a href={`/fencer/${memberA.id}`} class="font-extrabold text-xl hover:text-brand-300 transition-colors">{memberA.fullName}</a>
           <div class="text-xs text-slate-500 mt-0.5">{memberA.club ?? ''}</div>
         </div>
         <div class="flex items-center gap-4 shrink-0">
-          <div class={`text-5xl font-extrabold tabular-nums ${h2h.aWins > h2h.bWins ? 'text-green-400' : 'text-slate-400'}`}>{h2h.aWins}</div>
+          <div class={"text-5xl font-extrabold tabular-nums " + (h2h.aWins > h2h.bWins ? 'text-green-400' : 'text-slate-400')}>{h2h.aWins}</div>
           <div class="text-2xl text-slate-600">–</div>
-          <div class={`text-5xl font-extrabold tabular-nums ${h2h.bWins > h2h.aWins ? 'text-green-400' : 'text-slate-400'}`}>{h2h.bWins}</div>
+          <div class={"text-5xl font-extrabold tabular-nums " + (h2h.bWins > h2h.aWins ? 'text-green-400' : 'text-slate-400')}>{h2h.bWins}</div>
         </div>
         <div class="flex-1">
           <a href={`/fencer/${memberB.id}`} class="font-extrabold text-xl hover:text-brand-300 transition-colors">{memberB.fullName}</a>
           <div class="text-xs text-slate-500 mt-0.5">{memberB.club ?? ''}</div>
         </div>
       </div>
-      <p class="text-xs text-slate-500 mb-4 -mt-2 text-center">
+      <p class="text-xs text-slate-500 -mt-2 text-center">
         Win totals count only bouts with a recorded winner ({h2h.aWins + h2h.bWins} decided of {h2h.matches.length} listed).
       </p>
 
+      <!-- NEW: Insights Row (Streak & Differential) -->
+      <div class="card p-4 flex flex-wrap justify-center gap-x-8 gap-y-2 text-sm border-l-4 border-l-brand-500">
+        {streakCount >= 3 && streakFencerName ? (
+          <div class="text-center md:text-left">
+            <span class="text-yellow-400 mr-1">🔥</span>
+            <span class="font-bold text-slate-200">{streakFencerName.split(' ').pop()}</span>
+            <span class="text-slate-400"> is on a </span>
+            <span class="font-bold text-yellow-400">{streakCount}-bout winning streak!</span>
+          </div>
+        ) : null}
+        <div class="flex items-center gap-4 text-slate-400">
+          <span>Avg. margin of victory:</span>
+          <span class={"font-mono font-bold tabular-nums " + (h2h.aWins > 0 ? 'text-slate-200' : 'text-slate-600')}>
+            +{avgDiffA} ({memberA.fullName.split(' ').pop()})
+          </span>
+          <span class="text-slate-600">|</span>
+          <span class={"font-mono font-bold tabular-nums " + (h2h.bWins > 0 ? 'text-slate-200' : 'text-slate-600')}>
+            +{avgDiffB} ({memberB.fullName.split(' ').pop()})
+          </span>
+        </div>
+      </div>
+
+      <!-- NEW: Common Tournaments Quick Links -->
+      {commonTournaments.length > 0 && (
+        <div class="flex flex-wrap items-center gap-2 text-xs">
+          <span class="text-slate-500 font-medium uppercase tracking-wide">Shared Tournaments:</span>
+          {commonTournaments.map(t => (
+            <a href={'/tournaments/' + t.id} class="px-2.5 py-1 rounded-md bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 hover:text-brand-300 transition-colors">
+              {t.name}
+            </a>
+          ))}
+        </div>
+      )}
+
+      <!-- ELO Comparison & Phase Breakdown Grid -->
+      <div class="grid md:grid-cols-2 gap-6">
+        
+        <!-- ELO Comparison -->
+        <div class="card overflow-hidden">
+          <div class="px-5 py-4 border-b border-white/10 bg-white/5">
+            <h2 class="font-bold text-base text-slate-200">ELO Comparison</h2>
+            <p class="text-xs text-slate-500 mt-0.5">Shared weapon, category, & season strands</p>
+          </div>
+          {commonDisciplines.length === 0 ? (
+            <div class="p-6 text-center text-sm text-slate-500">
+              These fencers do not share any recorded ELO disciplines.
+            </div>
+          ) : (
+            <div class="divide-y divide-white/5">
+              {commonDisciplines.map(d => (
+                <div class="px-5 py-3 flex items-center text-sm">
+                  <div class="flex-1 text-right pr-4">
+                    <div class={"font-mono font-bold text-lg tabular-nums " + (d.aRating >= d.bRating ? 'text-green-400' : 'text-slate-400')}>
+                      {d.aRating}
+                    </div>
+                    <div class="text-[11px] text-slate-500">Peak {d.aPeak} · {d.aGames}G</div>
+                  </div>
+                  <div class="shrink-0 text-center px-3">
+                    <div class="text-xs text-slate-500 font-medium uppercase tracking-wide">{d.label}</div>
+                  </div>
+                  <div class="flex-1 text-left pl-4">
+                    <div class={"font-mono font-bold text-lg tabular-nums " + (d.bRating > d.aRating ? 'text-green-400' : 'text-slate-400')}>
+                      {d.bRating}
+                    </div>
+                    <div class="text-[11px] text-slate-500">Peak {d.bPeak} · {d.bGames}G</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <!-- Phase Breakdown -->
+        <div class="card overflow-hidden">
+          <div class="px-5 py-4 border-b border-white/10 bg-white/5">
+            <h2 class="font-bold text-base text-slate-200">Wins by Phase</h2>
+            <p class="text-xs text-slate-500 mt-0.5">How bouts are distributed across pool & DE</p>
+          </div>
+          {Object.keys(phaseStats).length === 0 ? (
+            <div class="p-6 text-center text-sm text-slate-500">No phase data available.</div>
+          ) : (
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b border-white/10 bg-white/5 text-xs text-slate-500 uppercase tracking-wide">
+                  <th class="px-5 py-2 text-left">Phase</th>
+                  <th class="px-3 py-2 text-center">{memberA.fullName.split(' ').pop()}</th>
+                  <th class="px-3 py-2 text-center">{memberB.fullName.split(' ').pop()}</th>
+                  <th class="px-3 py-2 text-center text-slate-600">Draw</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-white/5">
+                {Object.entries(phaseStats).map(([phase, stats]) => (
+                  <tr class="table-row-hover">
+                    <td class="px-5 py-2.5 text-slate-300 font-medium">{phase}</td>
+                    <td class={"px-3 py-2.5 text-center font-bold tabular-nums " + (stats.a > stats.b ? 'text-green-400' : 'text-slate-400')}>{stats.a}</td>
+                    <td class={"px-3 py-2.5 text-center font-bold tabular-nums " + (stats.b > stats.a ? 'text-green-400' : 'text-slate-400')}>{stats.b}</td>
+                    <td class="px-3 py-2.5 text-center text-slate-600 tabular-nums">{stats.d}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+      </div>
+
       <!-- Match history -->
-      <h2 class="font-bold text-lg mb-3">Match history ({h2h.matches.length} bouts)</h2>
+      <h2 class="font-bold text-lg mt-2">Match history ({h2h.matches.length} bouts)</h2>
       {h2h.matches.length === 0 ? (
         <div class="card p-10 text-center text-slate-500">No head-to-head bouts on record</div>
       ) : (

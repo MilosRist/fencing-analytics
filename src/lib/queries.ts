@@ -13,16 +13,19 @@ export async function getRankings(filters: {
 }) {
   const { season, weapon, sex, category, limit = 50 } = filters;
 
-  // Rankings are only meaningful within a specific weapon+category combination.
-  // Return empty if neither weapon nor category is specified to avoid
-  // summing points across disciplines.
-  if (!weapon && !category) return [];
+  // Rankings are strictly tied to a specific season + weapon + category.
+  // Return empty immediately if any of these are missing.
+  if (!season || !weapon || !category) return [];
 
-  const where: Record<string, unknown> = {};
-  if (season)   where.season   = season;
-  if (weapon)   where.weapon   = weapon;
-  if (sex)      where.sex      = sex;
-  if (category) where.category = category;
+  // Force the required filters into the where clause
+  const where: Record<string, unknown> = {
+    season,
+    weapon,
+    category,
+  };
+  
+  // Sex remains optional
+  if (sex) where.sex = sex;
 
   const results = await prisma.pointEntry.groupBy({
     by:       ['memberId'],

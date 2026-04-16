@@ -1,23 +1,16 @@
 ---
 // src/pages/fencer/[id].astro
 import Layout from '../../layouts/Layout.astro';
-import prisma from '../../lib/prisma';
 import { getMemberProfile } from '../../lib/queries';
 import { eloTier } from '../../lib/elo';
 import FencerCharts from '../../components/FencerCharts';
 import { formatPoints } from '../../lib/format';
 
-export async function getStaticPaths() {
-  const members = await prisma.member.findMany({
-    select: { id: true },
-  });
-
-  return members.map((member) => ({
-    params: { id: member.id },
-  }));
-}
+// Render on-demand instead of at build time
+export const prerender = false;
 
 const { id } = Astro.params;
+
 let profile: any = null;
 try {
   profile = await getMemberProfile(id!);

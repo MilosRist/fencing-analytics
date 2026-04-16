@@ -16,6 +16,7 @@
     "db:backfill:pool-events": "tsx scripts/backfill-pool-event-links.ts"
   },
   "dependencies": {
+    "@astrojs/netlify": "^5.5.4",
     "@astrojs/react": "^3.6.3",
     "@astrojs/tailwind": "^5.1.4",
     "@prisma/client": "^6.19.3",

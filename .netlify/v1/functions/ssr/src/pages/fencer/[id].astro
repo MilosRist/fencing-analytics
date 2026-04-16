@@ -1,0 +1,268 @@
+---
+// src/pages/fencer/[id].astro
+import Layout from '../../layouts/Layout.astro';
+import { getMemberProfile } from '../../lib/queries';
+import { eloTier } from '../../lib/elo';
+import FencerCharts from '../../components/FencerCharts';
+import { formatPoints } from '../../lib/format';
+
+// Render on-demand instead of at build time
+export const prerender = false;
+
+const { id } = Astro.params;
+
+let profile: any = null;
+try {
+  profile = await getMemberProfile(id!);
+} catch {}
+
+if (!profile) return Astro.redirect('/fencer');
+
+// Points: one cumulative series per season + weapon + category (chronological within strand)
+const sortedByTime = profile.pointEntries.slice().sort(
+  (a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+);
+const strandMap = new Map<string, { label: string; rows: any[] }>();
+for (const e of sortedByTime) {
+  const season = e.season ?? '—';
+  const weapon = e.weapon ?? '—';
+  const category = e.category ?? '—';
+  const key = `${season}|${weapon}|${category}`;
+  if (!strandMap.has(key)) {
+    strandMap.set(key, { label: `${weapon} · ${category} · ${season}`, rows: [] });
+  }
+  strandMap.get(key)!.rows.push(e);
+}
+const pointsStrands = [...strandMap.entries()].map(([key, { label, rows }]) => {
+  let cum = 0;
+  const points = rows.map((entry: any, i: number) => {
+    cum += entry.points ?? 0;
+    return {
+      n: i + 1,
+      name: entry.eventName?.slice(0, 22) ?? `T${i + 1}`,
+      points: entry.points ?? 0,
+      cumulative: cum,
+    };
+  });
+  return { key, label, points };
+}).filter((s) => s.points.length > 0);
+
+// Points totals: one row per season + weapon + category
+const pointTotalsByStrand = [...strandMap.entries()].map(([key, { label, rows }]) => {
+  const [season, weapon, category] = key.split('|');
+  const totalPoints = rows.reduce((sum, r: any) => sum + (r.points ?? 0), 0);
+  return {
+    key,
+    label,
+    season,
+    weapon,
+    category,
+    tournaments: rows.length,
+    totalPoints,
+  };
+}).sort((a, b) => {
+  // Season desc (lexicographic works fine for "YYYY/YYYY"), then weapon/category asc
+  if (a.season !== b.season) return String(b.season).localeCompare(String(a.season));
+  if (a.weapon !== b.weapon) return String(a.weapon).localeCompare(String(b.weapon));
+  return String(a.category).localeCompare(String(b.category));
+});
+
+const eloHistoryStrands = profile.eloRatings.map((r: any) => ({
+  key: r.id,
+  label: `${r.weapon} · ${r.category || '—'} · ${r.season || '—'}`,
+  history: r.history
+    .slice()
+    .map((h: any, i: number) => ({
+      name: `M${i + 1}`,
+      rating: h.ratingAfter,
+    })),
+})).filter((s: { history: unknown[] }) => s.history.length > 0);
+
+const chartData: any = {
+  pointsStrands,
+  eloHistoryStrands,
+  wlByWeapon: profile.wlByWeapon ?? [],
+};
+
+const wins = profile.stats.wins;
+const losses = profile.stats.losses;
+const totalMatches = profile.stats.totalMatches;
+---
+
+<Layout title={profile.fullName}>
+  <div class="mb-2 flex flex-wrap gap-3 items-center justify-between">
+    <a href="/fencer" class="text-sm text-muted-foreground hover:text-foreground transition-colors">← Search</a>
+    <a href="/h2h" class="text-sm text-primary hover:text-primary/80 transition-colors">Head-to-head →</a>
+  </div>
+
+  <!-- Profile header -->
+  <div class="card p-6 mb-6 flex items-start gap-5 flex-wrap">
+    <div class="w-16 h-16 rounded-2xl bg-secondary text-secondary-foreground border border-border flex items-center justify-center font-bold text-2xl shrink-0">
+      {profile.fullName.split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
+    </div>
+    <div class="flex-1 min-w-0">
+      <h1 class="text-2xl font-bold tracking-tight text-foreground">{profile.fullName}</h1>
+      <div class="text-muted-foreground text-sm mt-0.5">{profile.club ?? 'No club listed'}</div>
+      <div class="flex flex-wrap gap-2 mt-2">
+        {profile.sex && <span class="badge bg-secondary text-secondary-foreground border border-border">{profile.sex === 'M' ? 'Male' : profile.sex === 'F' ? 'Female' : profile.sex}</span>}
+        {profile.country && <span class="badge bg-secondary text-secondary-foreground border border-border">{profile.country}</span>}
+        {profile.province && <span class="badge bg-secondary text-secondary-foreground border border-border">{profile.province}</span>}
+        {profile.cffLicence && <span class="badge bg-primary/10 text-primary border border-primary/20">CFF: {profile.cffLicence}</span>}
+      </div>
+    </div>
+
+    <!-- Quick stats: decided bouts only (matches win/loss by weapon totals) -->
+    <div class="flex gap-6 text-center">
+      <div>
+        <div class="text-2xl font-bold tabular-nums text-green-600 dark:text-green-400">{wins}</div>
+        <div class="text-xs text-muted-foreground uppercase tracking-wide font-medium">Wins</div>
+      </div>
+      <div>
+        <div class="text-2xl font-bold tabular-nums text-red-600 dark:text-red-400">{losses}</div>
+        <div class="text-xs text-muted-foreground uppercase tracking-wide font-medium">Losses</div>
+      </div>
+      <div>
+        <div class="text-2xl font-bold tabular-nums text-foreground">{totalMatches > 0 ? ((wins / totalMatches) * 100).toFixed(1) : 0}%</div>
+        <div class="text-xs text-muted-foreground uppercase tracking-wide font-medium">Win rate</div>
+      </div>
+    </div>
+  </div>
+  <p class="text-xs text-muted-foreground mb-4 -mt-2">
+    Record uses bouts with a recorded winner ({totalMatches} total). Weapon breakdown includes pool and elimination matches once event data is linked.
+  </p>
+
+  <!-- ELO ratings cards -->
+  {profile.eloRatings.length > 0 && (
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+      {profile.eloRatings.map((r: any) => {
+        const tier = eloTier(r.rating);
+        return (
+          <div class="card p-4 text-center hover:shadow-md transition-shadow">
+            <div class="text-xs text-muted-foreground uppercase tracking-wide font-medium mb-2">{r.weapon} ELO</div>
+            <div class="text-[11px] text-muted-foreground mb-1">{r.category || '—'} · {r.season || '—'}</div>
+            <div class={"text-3xl font-bold tabular-nums " + tier.color}>{r.rating}</div>
+            <div class={"text-sm font-semibold mt-0.5 " + tier.color}>{tier.label}</div>
+            <div class="text-xs text-muted-foreground mt-2">{r.gamesPlayed} games · Peak {r.peakRating}</div>
+          </div>
+        );
+      })}
+    </div>
+  )}
+
+  <!-- Charts (React island) -->
+  <FencerCharts data={chartData} client:load />
+
+  <!-- Tournament results -->
+  <div class="card overflow-hidden mb-6">
+    <div class="px-5 py-4 border-b border-border">
+      <h2 class="font-semibold text-lg text-foreground">Tournament Results</h2>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-border bg-muted/50">
+            <th class="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wide">Tournament</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wide hidden md:table-cell">Event</th>
+            <th class="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wide">Place</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-border">
+          {profile.tournamentResults.length === 0 ? (
+            <tr>
+              <td colspan="3" class="px-4 py-8 text-center text-muted-foreground">No tournament results recorded</td>
+            </tr>
+          ) : profile.tournamentResults.map((r: any) => (
+            <tr class="table-row-hover">
+              <td class="px-4 py-3">
+                <a href={"/tournaments/" + r.tournament.id} class="hover:text-primary transition-colors font-medium text-foreground">
+                  {r.tournament.name}
+                </a>
+                <div class="text-xs text-muted-foreground mt-0.5">{r.tournament.season ?? ''}</div>
+              </td>
+              <td class="px-4 py-3 text-muted-foreground text-xs hidden md:table-cell">
+                {r.event?.name ?? '—'}
+              </td>
+              <td class="px-4 py-3 text-right">
+                <span class={"font-bold tabular-nums " + (
+                  r.place === 1 ? 'text-yellow-500 dark:text-yellow-400' :
+                  r.place === 2 ? 'text-slate-400' :
+                  r.place === 3 ? 'text-orange-500 dark:text-orange-400' :
+                  'text-muted-foreground'
+                )}>
+                  {r.place <= 3 ? ['🥇','🥈','🥉'][r.place-1] : '#' + r.place}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Point entries -->
+  <div class="card overflow-hidden">
+    <div class="px-5 py-4 border-b border-border">
+      <h2 class="font-semibold text-lg text-foreground">Point history</h2>
+      <p class="text-xs text-muted-foreground mt-1">Points are tracked per season, weapon, and category — there is no single combined total.</p>
+    </div>
+
+    {pointTotalsByStrand.length > 0 && (
+      <div class="px-5 py-4 border-b border-border bg-muted/30">
+        <div class="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
+          Totals by season · weapon · category
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-border">
+                <th class="py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wide">Season</th>
+                <th class="py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wide">Weapon</th>
+                <th class="py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wide hidden sm:table-cell">Category</th>
+                <th class="py-2 text-right text-xs font-medium text-muted-foreground uppercase tracking-wide hidden md:table-cell">Tournaments</th>
+                <th class="py-2 text-right text-xs font-medium text-muted-foreground uppercase tracking-wide">Total points</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-border">
+              {pointTotalsByStrand.map((row) => (
+                <tr>
+                  <td class="py-2 pr-4 text-foreground">{row.season ?? '—'}</td>
+                  <td class="py-2 pr-4 text-foreground">{row.weapon ?? '—'}</td>
+                  <td class="py-2 pr-4 text-muted-foreground hidden sm:table-cell">{row.category ?? '—'}</td>
+                  <td class="py-2 pl-4 text-right text-muted-foreground hidden md:table-cell tabular-nums">{row.tournaments}</td>
+                  <td class="py-2 pl-4 text-right font-mono font-semibold text-foreground tabular-nums">{formatPoints(row.totalPoints)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    )}
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-border bg-muted/50">
+            <th class="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wide">Event</th>
+            <th class="px-4 py-3 text-center text-xs font-medium text-muted-foreground uppercase tracking-wide hidden sm:table-cell">Season</th>
+            <th class="px-4 py-3 text-center text-xs font-medium text-muted-foreground uppercase tracking-wide hidden lg:table-cell">Weapon</th>
+            <th class="px-4 py-3 text-center text-xs font-medium text-muted-foreground uppercase tracking-wide hidden lg:table-cell">Category</th>
+            <th class="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wide hidden md:table-cell">Place</th>
+            <th class="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wide">Points</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-border">
+          {profile.pointEntries.slice(0, 40).map((e: any) => (
+            <tr class="table-row-hover">
+              <td class="px-4 py-2.5 max-w-[200px] truncate text-foreground">{e.eventName}</td>
+              <td class="px-4 py-2.5 text-center text-muted-foreground hidden sm:table-cell">{e.season ?? '—'}</td>
+              <td class="px-4 py-2.5 text-center text-muted-foreground hidden lg:table-cell">{e.weapon ?? '—'}</td>
+              <td class="px-4 py-2.5 text-center text-muted-foreground hidden lg:table-cell">{e.category ?? '—'}</td>
+              <td class="px-4 py-2.5 text-right text-muted-foreground hidden md:table-cell tabular-nums">{e.place ?? '—'}</td>
+              <td class="px-4 py-2.5 text-right font-mono font-semibold text-foreground tabular-nums">+{formatPoints(e.points ?? 0)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</Layout>

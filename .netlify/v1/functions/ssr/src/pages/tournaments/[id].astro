@@ -1,0 +1,138 @@
+---
+// src/pages/tournaments/[id].astro
+import Layout from '../../layouts/Layout.astro';
+import { getTournamentDetail } from '../../lib/queries';
+import prisma from '../../lib/prisma';
+
+export async function getStaticPaths() {
+  const tournaments = await prisma.tournament.findMany({
+    select: { id: true },
+  });
+
+  return tournaments.map((tournament) => ({
+    params: { id: tournament.id },
+  }));
+}
+
+const { id } = Astro.params;
+let tournament: any = null;
+try {
+  tournament = await getTournamentDetail(id!);
+} catch {}
+
+if (!tournament) {
+  return Astro.redirect('/tournaments');
+}
+
+const LEVEL_LABELS: Record<number, string> = {
+  0: 'Regional', 1: 'Sanctioned Regional', 2: 'AB Cup', 3: 'Provincials', 4: 'Canada Cup',
+};
+
+// Updated to use light/dark mode compatible semantic classes
+const weaponColors: Record<string, string> = {
+  Epee:  'bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/20',
+  Foil:  'bg-green-500/15 text-green-700 dark:text-green-400 border border-green-500/20',
+  Saber: 'bg-red-500/15 text-red-700 dark:text-red-400 border border-red-500/20',
+  Mixed: 'bg-purple-500/15 text-purple-700 dark:text-purple-400 border border-purple-500/20',
+};
+---
+
+<Layout title={tournament.name}>
+  <div class="mb-2">
+    <a href="/tournaments" class="text-sm text-muted-foreground hover:text-foreground transition-colors">← Tournaments</a>
+  </div>
+
+  <div class="mb-8">
+    <div class="flex items-start gap-3 flex-wrap">
+      <div>
+        <h1 class="text-3xl font-bold tracking-tight text-foreground mb-1">{tournament.name}</h1>
+        <div class="flex items-center gap-3 text-muted-foreground text-sm flex-wrap">
+          {/* Fix 1: Replaced template literal with string concatenation */}
+          <span class={"badge " + (
+            tournament.level >= 4 ? 'bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border border-yellow-500/20' :
+            tournament.level >= 3 ? 'bg-purple-500/15 text-purple-700 dark:text-purple-400 border border-purple-500/20' :
+            tournament.level >= 2 ? 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-400 border border-indigo-500/20' :
+            'bg-secondary text-muted-foreground border border-border'
+          )}>
+            {LEVEL_LABELS[tournament.level] ?? "Level " + tournament.level}
+          </span>
+          {tournament.date && (
+            <span>{new Date(tournament.date).toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+          )}
+          {tournament.season && <span>Season {tournament.season}</span>}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
+    <div class="stat-card">
+      <div class="text-2xl font-bold tabular-nums text-foreground">{tournament.events.length}</div>
+      <div class="text-xs text-muted-foreground uppercase tracking-wide font-medium">Events</div>
+    </div>
+    <div class="stat-card">
+      <div class="text-2xl font-bold tabular-nums text-foreground">
+        {tournament.events.reduce((s: number, e: any) => s + e._count.tournamentResults, 0)}
+      </div>
+      <div class="text-xs text-muted-foreground uppercase tracking-wide font-medium">Competitors</div>
+    </div>
+    <div class="stat-card">
+      <div class="text-2xl font-bold tabular-nums text-foreground">
+        {tournament.events.reduce((s: number, e: any) => s + e._count.pools, 0)}
+      </div>
+      <div class="text-xs text-muted-foreground uppercase tracking-wide font-medium">Pools</div>
+    </div>
+  </div>
+
+  <!-- Events grid -->
+  <h2 class="font-semibold text-xl text-foreground mb-4">Events</h2>
+  <div class="grid md:grid-cols-2 gap-4">
+    {tournament.events.map((event: any) => (
+      <div class="card p-5 hover:shadow-md transition-shadow">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <h3 class="font-semibold text-foreground">{event.name || (event.category + " " + event.sex + "'s " + event.weapon)}</h3>
+            <div class="flex gap-2 mt-1.5">
+              {/* Fix 2: Replaced template literal with string concatenation */}
+              <span class={"badge " + (weaponColors[event.weapon] ?? 'bg-secondary text-muted-foreground border border-border')}>{event.weapon}</span>
+              <span class="badge bg-secondary text-muted-foreground border border-border">{event.sex}</span>
+              {event.category && <span class="badge bg-secondary text-muted-foreground border border-border">{event.category}</span>}
+            </div>
+          </div>
+          <div class="text-right text-sm text-muted-foreground">
+            <div class="font-semibold text-foreground tabular-nums">{event._count.tournamentResults}</div>
+            <div class="text-xs">fencers</div>
+          </div>
+        </div>
+
+        <!-- Full standings -->
+        {event.tournamentResults.length > 0 && (
+          <div class="mt-3 pt-3 border-t border-border">
+            <div class="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-2">Standings</div>
+            <div class="max-h-64 overflow-y-auto space-y-1 pr-1">
+            {event.tournamentResults.map((r: any) => (
+              <div class="flex items-center gap-2 text-sm">
+                {/* Fix 3: Replaced template literal with string concatenation */}
+                <span class={"w-6 text-center font-bold " + (
+                  r.place === 1 ? 'text-yellow-500 dark:text-yellow-400' :
+                  r.place === 2 ? 'text-slate-400' :
+                  r.place === 3 ? 'text-orange-500 dark:text-orange-400' :
+                  'text-muted-foreground'
+                )}>
+                  {/* Fix 4: Replaced template literal with string concatenation */}
+                  {r.place <= 3 ? ['🥇','🥈','🥉'][r.place-1] : '#' + r.place}
+                </span>
+                <a href={"/fencer/" + r.member.id} class="hover:text-primary transition-colors flex-1 truncate text-foreground">
+                  {r.member.fullName}
+                </a>
+                <span class="text-xs text-muted-foreground truncate max-w-[120px]">{r.club ?? r.member.club ?? ''}</span>
+              </div>
+            ))}
+            </div>
+          </div>
+        )}
+      </div>
+    ))}
+  </div>
+</Layout>

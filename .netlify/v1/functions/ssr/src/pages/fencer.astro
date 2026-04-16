@@ -1,0 +1,76 @@
+---
+// src/pages/fencer.astro
+import Layout from '../layouts/Layout.astro';
+import { searchMembers } from '../lib/queries';
+
+const url = Astro.url;
+const q = url.searchParams.get('q') ?? '';
+
+let results: any[] = [];
+if (q.length >= 2) {
+  try {
+    results = await searchMembers(q, 30);
+  } catch {}
+}
+---
+
+<Layout title="Fencer Search">
+  <div class="mb-8">
+    <h1 class="text-3xl font-extrabold mb-1">Fencer Search</h1>
+    <p class="text-slate-400">Find any registered fencer to view their profile and stats</p>
+  </div>
+
+  <form method="get" class="mb-8">
+    <div class="flex gap-3">
+      <input
+        type="text"
+        name="q"
+        value={q}
+        placeholder="Search by name or CFF licence..."
+        class="input text-base"
+        autofocus
+      />
+      <button type="submit" class="btn-primary px-6">Search</button>
+    </div>
+  </form>
+
+  {q.length > 0 && q.length < 2 && (
+    <div class="text-slate-500 text-sm">Please enter at least 2 characters.</div>
+  )}
+
+  {q.length >= 2 && results.length === 0 && (
+    <div class="card p-12 text-center">
+      <div class="text-4xl mb-3">🔍</div>
+      <div class="font-semibold mb-1">No fencers found</div>
+      <div class="text-slate-500 text-sm">Try a different name or check the spelling</div>
+    </div>
+  )}
+
+  {results.length > 0 && (
+    <div>
+      <div class="text-xs text-slate-500 uppercase tracking-wide mb-3">{results.length} result{results.length !== 1 ? 's' : ''} for "{q}"</div>
+      <div class="grid sm:grid-cols-2 md:grid-cols-3 gap-3">
+        {results.map(member => (
+          <a href={`/fencer/${member.id}`} class="card p-4 hover:bg-white/10 transition-all group">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-full bg-brand-500/20 border border-brand-500/30 flex items-center justify-center font-bold text-brand-300 text-sm shrink-0">
+                {member.fullName.split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
+              </div>
+              <div class="min-w-0">
+                <div class="font-semibold group-hover:text-brand-300 transition-colors truncate">{member.fullName}</div>
+                <div class="text-xs text-slate-500 truncate">{member.club ?? 'No club'}</div>
+              </div>
+            </div>
+          </a>
+        ))}
+      </div>
+    </div>
+  )}
+
+  {!q && (
+    <div class="card p-10 text-center text-slate-500">
+      <div class="text-5xl mb-4">⚔️</div>
+      <p class="text-base">Start typing to search for a fencer</p>
+    </div>
+  )}
+</Layout>

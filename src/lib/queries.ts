@@ -12,19 +12,9 @@ export async function getRankings(filters: {
   limit?:    number;
 }) {
   const { season, weapon, sex, category, limit = 50 } = filters;
-
-  // Rankings are strictly tied to a specific season + weapon + category.
-  // Return empty immediately if any of these are missing.
   if (!season || !weapon || !category) return [];
 
-  // Force the required filters into the where clause
-  const where: Record<string, unknown> = {
-    season,
-    weapon,
-    category,
-  };
-  
-  // Sex remains optional
+  const where: Record<string, unknown> = { season, weapon, category };
   if (sex) where.sex = sex;
 
   const results = await prisma.pointEntry.groupBy({
@@ -49,6 +39,68 @@ export async function getRankings(filters: {
     totalPoints:  r._sum.points ?? 0,
     tournaments:  r._count.id,
   }));
+}
+
+/**
+ * AFA-only rankings: only members with province = 'AB' are shown.
+ *
+ * Sex filter semantics:
+ *   "Men"   → include Men + Mixed event points (folded into Men ranking)
+ *   "Women" → include Women event points only
+ *   "Any"   → include ALL event sex values (Men + Women + Mixed), summed per fencer
+ */
+export async function getRankingsAFA(filters: {
+  season?:   string;
+  weapon?:   string;
+  sex?:      string;
+  category?: string;
+  limit?:    number;
+}) {
+  const { season, weapon, sex, category, limit = 100 } = filters;
+  if (!season || !weapon || !category) return [];
+
+  const where: Record<string, unknown> = { season, weapon, category };
+
+  if (sex === 'Men') {
+    where.sex = { in: ['Men', 'Mixed'] };
+  } else if (sex === 'Women') {
+    where.sex = 'Women';
+  }
+  // "Any" → no sex filter
+
+  const entries = await prisma.pointEntry.findMany({
+    where,
+    select: {
+      memberId: true,
+      points:   true,
+      member: {
+        select: { id: true, fullName: true, club: true, isAfaMember: true },
+      },
+    },
+  });
+
+  // Only show AFA members (imported from ftest Membership sheet) in rankings
+  const afaEntries = entries.filter(e => e.member.isAfaMember);
+
+  const memberTotals = new Map<string, { member: any; totalPoints: number; tournaments: number }>();
+  for (const e of afaEntries) {
+    const existing = memberTotals.get(e.memberId);
+    if (existing) {
+      existing.totalPoints += e.points ?? 0;
+      existing.tournaments += 1;
+    } else {
+      memberTotals.set(e.memberId, {
+        member:      e.member,
+        totalPoints: e.points ?? 0,
+        tournaments: 1,
+      });
+    }
+  }
+
+  return [...memberTotals.values()]
+    .sort((a, b) => b.totalPoints - a.totalPoints)
+    .slice(0, limit)
+    .map((row, i) => ({ rank: i + 1, ...row }));
 }
 
 // ── Member search ────────────────────────────────────────────────────────────
@@ -121,6 +173,58 @@ export async function getMemberProfile(memberId: string) {
   };
 }
 
+// ── Club detail ─────────────────────────────────────────────────────────────
+
+export async function getClubDetail(clubName: string) {
+  // All point entries for members of this club
+  const entries = await prisma.pointEntry.findMany({
+    where: { member: { club: clubName } },
+    select: {
+      memberId: true,
+      points:   true,
+      member: { select: { id: true, fullName: true, club: true, isAfaMember: true } },
+    },
+  });
+
+  // Get best ELO rating per member (highest current rating across all weapons)
+  const eloRatings = await prisma.eloRating.findMany({
+    where: { member: { club: clubName } },
+    orderBy: { rating: 'desc' },
+    include: { member: { select: { id: true } } },
+  });
+
+  // Map: memberId → best ELO entry
+  const bestEloMap = new Map<string, any>();
+  for (const r of eloRatings) {
+    if (!bestEloMap.has(r.memberId)) {
+      bestEloMap.set(r.memberId, r);
+    }
+  }
+
+  // Aggregate totals
+  const memberTotals = new Map<string, { member: any; totalPoints: number; tournaments: number }>();
+  for (const e of entries) {
+    const existing = memberTotals.get(e.memberId);
+    if (existing) {
+      existing.totalPoints += e.points ?? 0;
+      existing.tournaments += 1;
+    } else {
+      memberTotals.set(e.memberId, {
+        member:      e.member,
+        totalPoints: e.points ?? 0,
+        tournaments: 1,
+      });
+    }
+  }
+
+  return [...memberTotals.values()]
+    .sort((a, b) => b.totalPoints - a.totalPoints)
+    .map(row => ({
+      ...row,
+      bestElo: bestEloMap.get(row.member.id) ?? null,
+    }));
+}
+
 // ── Club rankings ────────────────────────────────────────────────────────────
 
 export async function getClubRankings(filters: { season?: string; weapon?: string }) {
@@ -166,24 +270,35 @@ export async function getEloLeaderboard(filters: {
   weapon?: string;
   season?: string;
   category?: string;
+  sex?: string;
   limit?: number;
 }) {
-  const { weapon, season, category, limit = 50 } = filters;
+  const { weapon, season, category, sex, limit = 50 } = filters;
   const where: Record<string, unknown> = {};
   if (weapon) where.weapon = weapon;
-  if (season) where.season = season;
-  if (category) where.category = category;
-
+  // sex is on the member relation — filter post-query if provided
+  
   const ratings = await prisma.eloRating.findMany({
     where,
     orderBy: { rating: 'desc' },
-    take: limit,
+    take: 5000, // fetch generously, filter down after
     include: {
-      member: { select: { id: true, fullName: true, club: true, sex: true } },
+      member: { select: { id: true, fullName: true, club: true, sex: true, isAfaMember: true } },
     },
   });
 
-  return ratings.map((r, i) => ({ rank: i + 1, ...r }));
+  // Only display AFA members on the leaderboard.
+  // Non-AFA members still participate in ELO calculations (recompute-elo.ts)
+  // and are searchable via fencer search and head-to-head — just not shown here.
+  const afaOnly = ratings.filter(r => r.member.isAfaMember);
+
+  // Apply sex filter if provided (Member.sex stores 'M'/'F', UI sends 'Men'/'Women')
+  const sexMap: Record<string, string> = { Men: 'M', Women: 'F' };
+  const filtered = sex
+    ? afaOnly.filter(r => r.member.sex === (sexMap[sex] ?? sex)).slice(0, limit)
+    : afaOnly.slice(0, limit);
+
+  return filtered.map((r, i) => ({ rank: i + 1, ...r }));
 }
 
 // ── Head-to-head ─────────────────────────────────────────────────────────────
@@ -230,8 +345,12 @@ export async function getFilterOptions() {
 
 // ── Tournament overview ───────────────────────────────────────────────────────
 
-export async function getTournaments() {
+export async function getTournaments(filters?: { season?: string; level?: number }) {
+  const where: Record<string, unknown> = {};
+  if (filters?.season) where.season = filters.season;
+  if (filters?.level !== undefined) where.level = filters.level;
   return prisma.tournament.findMany({
+    where,
     include: {
       _count: { select: { events: true, tournamentResults: true } },
     },

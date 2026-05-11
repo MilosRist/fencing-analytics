@@ -5,19 +5,27 @@ import { getEloLeaderboard, getFilterOptions } from '../lib/queries';
 import { eloTier } from '../lib/elo';
 
 const url = Astro.url;
-const weapon = url.searchParams.get('weapon') ?? '';
-const season = url.searchParams.get('season') ?? '';
-const category = url.searchParams.get('category') ?? '';
-const WEAPONS = ['Epee', 'Foil', 'Saber'];
+// Defaults per feedback: Sabre weapon, most-recent season, Senior category, Women sex
+const filterOpts2 = await getFilterOptions().catch(() => ({
+  seasons: [] as string[], weapons: [] as string[], categories: [] as string[],
+}));
+const defaultEloSeason = filterOpts2.seasons[0] ?? '';
+
+const weapon   = url.searchParams.get('weapon')   ?? 'Saber';
+const season   = url.searchParams.get('season')   ?? defaultEloSeason;
+const category = url.searchParams.get('category') ?? 'Senior';
+const sex      = url.searchParams.get('sex')      ?? 'Women';
+const WEAPONS  = ['Epee', 'Foil', 'Saber'];
 
 let leaderboard: any[] = [];
 let filterOpts = { seasons: [] as string[], weapons: [] as string[], categories: [] as string[] };
 try {
   [leaderboard, filterOpts] = await Promise.all([
     getEloLeaderboard({
-      weapon: weapon || undefined,
-      season: season || undefined,
+      weapon:   weapon || undefined,
+      season:   season || undefined,
       category: category || undefined,
+      sex:      sex || undefined,
       limit: 1000,
     }),
     getFilterOptions(),
@@ -34,26 +42,33 @@ try {
   <!-- Filters -->
   <form method="get" class="card p-4 mb-6 flex flex-wrap gap-3 items-end">
     <div class="flex gap-2 flex-wrap">
-      <a href="/elo" class={`btn-${!weapon && !season && !category ? 'primary' : 'secondary'}`}>All</a>
+      <a href={'/elo?' + (season ? 'season=' + encodeURIComponent(season) + '&' : '') + (category ? 'category=' + encodeURIComponent(category) + '&' : '') + (sex ? 'sex=' + encodeURIComponent(sex) : '')} class={`btn-${!weapon ? 'primary' : 'secondary'}`}>All</a>
       {WEAPONS.map(w => (
         <a
-          href={'/elo?weapon=' + encodeURIComponent(w) + (season ? '&season=' + encodeURIComponent(season) : '') + (category ? '&category=' + encodeURIComponent(category) : '')}
+          href={'/elo?weapon=' + encodeURIComponent(w) + (season ? '&season=' + encodeURIComponent(season) : '') + (category ? '&category=' + encodeURIComponent(category) : '') + (sex ? '&sex=' + encodeURIComponent(sex) : '')}
           class={`btn-${weapon === w ? 'primary' : 'secondary'}`}
         >{w}</a>
       ))}
     </div>
     <div class="min-w-[120px]">
       <label class="block text-xs text-slate-500 mb-1 uppercase tracking-wide">Season</label>
-      <select name="season" class="input text-sm py-2">
+      <select name="season" id="elo-season" class="input text-sm py-2">
         <option value="">Any</option>
         {filterOpts.seasons.map(s => <option value={s} selected={s === season}>{s}</option>)}
       </select>
     </div>
     <div class="min-w-[120px]">
       <label class="block text-xs text-slate-500 mb-1 uppercase tracking-wide">Category</label>
-      <select name="category" class="input text-sm py-2">
+      <select name="category" id="elo-category" class="input text-sm py-2">
         <option value="">Any</option>
         {filterOpts.categories.map(c => <option value={c} selected={c === category}>{c}</option>)}
+      </select>
+    </div>
+    <div class="min-w-[120px]">
+      <label class="block text-xs text-slate-500 mb-1 uppercase tracking-wide">Sex</label>
+      <select name="sex" id="elo-sex" class="input text-sm py-2">
+        <option value="">Any</option>
+        {['Men', 'Women', 'Mixed', 'Wheelchair'].map(s => <option value={s} selected={s === sex}>{s}</option>)}
       </select>
     </div>
     {weapon && <input type="hidden" name="weapon" value={weapon} />}
@@ -130,3 +145,12 @@ try {
     </div>
   </div>
 </Layout>
+
+<script>
+  const form = document.querySelector('form[method="get"]') as HTMLFormElement | null;
+  if (form) {
+    ['elo-season', 'elo-category', 'elo-sex'].forEach(id => {
+      document.getElementById(id)?.addEventListener('change', () => form.submit());
+    });
+  }
+</script>

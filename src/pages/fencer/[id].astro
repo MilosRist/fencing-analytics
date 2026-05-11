@@ -137,7 +137,7 @@ const totalMatches = profile.stats.totalMatches;
       {profile.eloRatings.map((r: any) => {
         const tier = eloTier(r.rating);
         return (
-          <div class="card p-4 text-center hover:shadow-md transition-shadow">
+          <div class="card p-4 text-center">
             <div class="text-xs text-muted-foreground uppercase tracking-wide font-medium mb-2">{r.weapon} ELO</div>
             <div class="text-[11px] text-muted-foreground mb-1">{r.category || '—'} · {r.season || '—'}</div>
             <div class={"text-3xl font-bold tabular-nums " + tier.color}>{r.rating}</div>

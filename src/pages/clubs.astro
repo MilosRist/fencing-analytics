@@ -53,7 +53,7 @@ try {
       const pct = clubs[0]?.totalPoints > 0 ? (club.totalPoints / clubs[0].totalPoints) * 100 : 0;
       return (
         <div class="card p-5 hover:shadow-md transition-shadow">
-          <div class="flex items-center gap-4">
+          <a href={'/clubs/' + encodeURIComponent(club.club)} class="flex items-center gap-4 group">
             {/* Fix 1: Replaced template literal class with string concatenation */}
             <div class={"text-2xl font-bold tabular-nums w-10 shrink-0 " + (
               club.rank === 1 ? 'text-yellow-500 dark:text-yellow-400' :
@@ -76,7 +76,7 @@ try {
               <div class="font-mono font-bold text-xl text-foreground tabular-nums">{formatPoints(club.totalPoints)}</div>
               <div class="text-xs text-muted-foreground mt-0.5">points</div>
             </div>
-          </div>
+          </a>
         </div>
       );
     })}

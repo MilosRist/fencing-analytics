@@ -20,6 +20,7 @@ model Member {
   dateOfBirth    DateTime?
   memberAge      Int?
   status         String?
+  isAfaMember    Boolean  @default(false)  // true = imported from ftest Membership sheet
   country        String?
   province       String?
   city           String?

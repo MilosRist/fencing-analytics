@@ -1,11 +1,19 @@
 ---
 // src/pages/tournaments.astro
 import Layout from '../layouts/Layout.astro';
-import { getTournaments } from '../lib/queries';
+import { getTournaments, getFilterOptions } from '../lib/queries';
+
+const url = Astro.url;
+const season = url.searchParams.get('season') ?? '';
+const level  = url.searchParams.get('level')  ?? '';
 
 let tournaments: any[] = [];
+let filterOpts = { seasons: [] as string[], weapons: [] as string[], categories: [] as string[] };
 try {
-  tournaments = await getTournaments();
+  [tournaments, filterOpts] = await Promise.all([
+    getTournaments({ season: season || undefined, level: level ? Number(level) : undefined }),
+    getFilterOptions(),
+  ]);
 } catch {}
 
 const LEVEL_LABELS: Record<number, string> = {
@@ -27,12 +35,32 @@ const LEVEL_COLORS: Record<number, string> = {
 <Layout title="Tournaments">
   <div class="mb-8">
     <h1 class="text-3xl font-extrabold mb-1">Tournaments</h1>
-    <p class="text-slate-400">{tournaments.length} tournaments across all seasons</p>
+    <p class="text-slate-400">{tournaments.length} tournament{tournaments.length !== 1 ? 's' : ''} shown</p>
   </div>
+
+  <!-- Filters -->
+  <form id="tournamentsForm" method="get" class="card p-4 mb-6 flex flex-wrap gap-3 items-end">
+    <div class="min-w-[140px] flex-1">
+      <label class="block text-xs text-slate-500 mb-1 uppercase tracking-wide">Season</label>
+      <select name="season" id="t-season" class="input text-sm py-2">
+        <option value="">All Seasons</option>
+        {filterOpts.seasons.map(s => <option value={s} selected={s === season}>{s}</option>)}
+      </select>
+    </div>
+    <div class="min-w-[160px] flex-1">
+      <label class="block text-xs text-slate-500 mb-1 uppercase tracking-wide">Level</label>
+      <select name="level" id="t-level" class="input text-sm py-2">
+        <option value="">All Levels</option>
+        {[0,1,2,3,4].map(l => <option value={String(l)} selected={String(l) === level}>{LEVEL_LABELS[l]}</option>)}
+      </select>
+    </div>
+    <button type="submit" class="btn-primary shrink-0">Apply</button>
+    <a href="/tournaments" class="btn-secondary shrink-0">Reset</a>
+  </form>
 
   <div class="grid gap-3">
     {tournaments.length === 0 ? (
-      <div class="card p-12 text-center text-slate-500">No tournament data imported yet.</div>
+      <div class="card p-12 text-center text-slate-500">No tournaments found for the selected filters.</div>
     ) : tournaments.map(t => (
       <a href={`/tournaments/${t.id}`} class="card p-5 hover:bg-white/10 transition-all group flex items-center gap-4">
         <div class="flex-1 min-w-0">
@@ -61,3 +89,12 @@ const LEVEL_COLORS: Record<number, string> = {
     ))}
   </div>
 </Layout>
+
+<script>
+  const form = document.getElementById('tournamentsForm') as HTMLFormElement | null;
+  if (form) {
+    ['t-season', 't-level'].forEach(id => {
+      document.getElementById(id)?.addEventListener('change', () => form.submit());
+    });
+  }
+</script>

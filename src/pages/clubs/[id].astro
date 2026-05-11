@@ -1,0 +1,94 @@
+---
+// src/pages/clubs/[id].astro
+// Dynamic club detail page — shows all fencers in the club ranked by total points,
+// with their best ELO rating alongside.
+export const prerender = false;
+
+import Layout from '../../layouts/Layout.astro';
+import { getClubDetail } from '../../lib/queries';
+import { formatPoints } from '../../lib/format';
+import { eloTier } from '../../lib/elo';
+
+const { id } = Astro.params;
+// The club name is URL-encoded in the id param
+const clubName = decodeURIComponent(id ?? '');
+
+let fencers: any[] = [];
+let clubExists = false;
+
+try {
+  const result = await getClubDetail(clubName);
+  fencers = result;
+  clubExists = true;
+} catch {}
+
+if (!clubExists || fencers.length === 0) {
+  return Astro.redirect('/clubs');
+}
+---
+
+<Layout title={clubName + ' — Club'}>
+  <div class="mb-4">
+    <a href="/clubs" class="text-sm text-muted-foreground hover:text-foreground transition-colors">← Clubs</a>
+  </div>
+
+  <div class="mb-8">
+    <h1 class="text-3xl font-bold tracking-tight text-foreground mb-1">{clubName}</h1>
+    <p class="text-muted-foreground">{fencers.length} ranked {fencers.length === 1 ? 'fencer' : 'fencers'}</p>
+  </div>
+
+  <div class="card overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-border bg-muted/50">
+            <th class="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide w-12">#</th>
+            <th class="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide">Fencer</th>
+            <th class="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide hidden md:table-cell">Best ELO</th>
+            <th class="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wide hidden sm:table-cell">Tournaments</th>
+            <th class="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wide">Total Points</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-border">
+          {fencers.map((f, i) => {
+            const rank = i + 1;
+            const bestElo = f.bestElo;
+            const tier = bestElo ? eloTier(bestElo.rating) : null;
+            return (
+              <tr class="table-row-hover">
+                <td class="px-4 py-3">
+                  <span class={"font-bold tabular-nums text-sm " + (
+                    rank === 1 ? 'text-yellow-500 dark:text-yellow-400' :
+                    rank === 2 ? 'text-slate-400' :
+                    rank === 3 ? 'text-orange-500 dark:text-orange-400' :
+                    'text-muted-foreground'
+                  )}>
+                    {rank <= 3 ? ['🥇','🥈','🥉'][rank-1] : '#' + rank}
+                  </span>
+                </td>
+                <td class="px-4 py-3">
+                  <a href={'/fencer/' + f.member.id} class="font-semibold hover:text-primary transition-colors text-foreground">
+                    {f.member.fullName}
+                  </a>
+                </td>
+                <td class="px-4 py-3 hidden md:table-cell">
+                  {bestElo && tier ? (
+                    <span class={"font-mono font-semibold tabular-nums " + tier.color}>
+                      {bestElo.rating} <span class="text-xs opacity-70">({bestElo.weapon})</span>
+                    </span>
+                  ) : (
+                    <span class="text-muted-foreground">—</span>
+                  )}
+                </td>
+                <td class="px-4 py-3 text-right text-muted-foreground hidden sm:table-cell tabular-nums">{f.tournaments}</td>
+                <td class="px-4 py-3 text-right font-mono font-bold text-foreground tabular-nums">
+                  {formatPoints(f.totalPoints)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</Layout>
